@@ -385,15 +385,6 @@ float UMinimapSubsystem::GetViewYawDegrees(const APlayerController* PlayerContro
 
 	if (PlayerController != nullptr)
 	{
-		// The map's "up" should match what the player sees, and the screen shows the camera's
-		// orientation - so camera yaw wins even when the pawn is facing elsewhere.
-		if (PlayerController->PlayerCameraManager != nullptr)
-		{
-			return PlayerController->PlayerCameraManager->GetCameraRotation().Yaw;
-		}
-
-		// No camera manager (early init, or a controller that is not the local view target): the
-		// pawn's facing is a closer guess than pinning the map north-up.
 		const APawn* Pawn = PlayerController->GetPawn();
 		if (Pawn != nullptr)
 		{
