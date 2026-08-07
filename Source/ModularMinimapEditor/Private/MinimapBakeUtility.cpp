@@ -124,7 +124,9 @@ void FMinimapBakeUtility::BakeCurrentLevel()
 			const FVector2D End = Projection.WorldToPixel(Geometry.NavMeshEdges[Index + 1], TextureSize);
 			FCanvasLineItem Line(Start, End);
 			Line.SetColor(StyleDefaults->OutlineColor);
-			Line.LineThickness = StyleDefaults->OutlineThickness;
+			// A bake burns the outline into the texture, so the style's screen-pixel width lands here
+			// as a texture-pixel width. Baked backgrounds bypass the material's distance shading.
+			Line.LineThickness = StyleDefaults->OutlineWidthPixels;
 			Canvas->DrawItem(Line);
 		}
 	}

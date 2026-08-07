@@ -29,10 +29,15 @@ static const FName MinimapParam_UVSpan(TEXT("UVSpan"));
 static const FName MinimapParam_RotationRad(TEXT("RotationRad"));
 static const FName MinimapParam_MaskShape(TEXT("MaskShape"));
 static const FName MinimapParam_MapTexelCount(TEXT("MapTexelCount"));
-static const FName MinimapParam_OutlineTexels(TEXT("OutlineTexels"));
 static const FName MinimapParam_ExploredDim(TEXT("ExploredDim"));
 static const FName MinimapParam_FogEnabled(TEXT("FogEnabled"));
 static const FName MinimapParam_BackgroundIsMask(TEXT("BackgroundIsMask"));
+static const FName MinimapParam_GlowColor(TEXT("GlowColor"));
+static const FName MinimapParam_OutlineWidthPixels(TEXT("OutlineWidthPixels"));
+static const FName MinimapParam_OutlineSoftnessPixels(TEXT("OutlineSoftnessPixels"));
+static const FName MinimapParam_OutlineOffsetPixels(TEXT("OutlineOffsetPixels"));
+static const FName MinimapParam_FillFeatherPixels(TEXT("FillFeatherPixels"));
+static const FName MinimapParam_GlowWidthPixels(TEXT("GlowWidthPixels"));
 
 void UMinimapWidgetBase::NativeOnInitialized()
 {
@@ -234,7 +239,12 @@ void UMinimapWidgetBase::RefreshMapBrush()
 			const UMinimapLevelSettings* Style = LevelSettings != nullptr ? LevelSettings : Defaults;
 			MapMID->SetVectorParameterValue(MinimapParam_FillColor, Style->WalkableFillColor);
 			MapMID->SetVectorParameterValue(MinimapParam_OutlineColor, Style->OutlineColor);
-			MapMID->SetScalarParameterValue(MinimapParam_OutlineTexels, Style->OutlineThickness);
+			MapMID->SetVectorParameterValue(MinimapParam_GlowColor, Style->GlowColor);
+			MapMID->SetScalarParameterValue(MinimapParam_OutlineWidthPixels, Style->OutlineWidthPixels);
+			MapMID->SetScalarParameterValue(MinimapParam_OutlineSoftnessPixels, Style->OutlineSoftnessPixels);
+			MapMID->SetScalarParameterValue(MinimapParam_OutlineOffsetPixels, Style->OutlineOffsetPixels);
+			MapMID->SetScalarParameterValue(MinimapParam_FillFeatherPixels, Style->FillFeatherPixels);
+			MapMID->SetScalarParameterValue(MinimapParam_GlowWidthPixels, Style->GlowWidthPixels);
 
 			const UMinimapDeveloperSettings* DevSettings = GetDefault<UMinimapDeveloperSettings>();
 			UTextureRenderTarget2D* FogExplored = Subsystem->GetFogExploredRenderTarget();

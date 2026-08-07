@@ -6,9 +6,11 @@
 
 /**
  * Creates the plugin's default content assets into /ModularMinimap:
- *  - Materials/M_MinimapBase: the styling/compositing material (PoE-style fill + outline from the
- *    coverage mask, fog composite, circular/rectangular mask) driven by the widget base's
- *    documented parameters,
+ *  - Materials/M_MinimapBase: the styling/compositing material (fill + outline from the coverage
+ *    mask, fog composite, circular/rectangular mask) driven by the widget base's documented
+ *    parameters. Its outline comes from a distance to the walkable boundary recovered from a
+ *    blurred mask, so it stays smooth and keeps a constant screen width at any zoom; widths,
+ *    softness and glow are all configurable in screen pixels,
  *  - Textures/TX_PlayerArrow, TX_EdgeArrow, TX_ObjectiveMarker, TX_DefaultDot: generated icons.
  *
  * Runnable from Tools > Modular Minimap or via `ModularMinimap.CreateDefaultAssets [force]`.

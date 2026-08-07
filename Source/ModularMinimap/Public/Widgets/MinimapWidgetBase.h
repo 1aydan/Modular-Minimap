@@ -22,9 +22,13 @@ class UMinimapSubsystem;
  *
  * When a styling material is set it must expose these parameters:
  *   Textures: MapTexture, FogExplored, FogVisible
- *   Vectors:  CenterUV (UV in RG), FillColor, OutlineColor
+ *   Vectors:  CenterUV (UV in RG), AspectScale (RG), FillColor, OutlineColor, GlowColor
  *   Scalars:  UVSpan, RotationRad, MaskShape (0 = rectangle, 1 = circle), MapTexelCount,
- *             OutlineTexels, ExploredDim, FogEnabled
+ *             OutlineWidthPixels, OutlineSoftnessPixels, OutlineOffsetPixels, FillFeatherPixels,
+ *             GlowWidthPixels, ExploredDim, FogEnabled, BackgroundIsMask
+ *
+ * Parameters a material does not declare are simply ignored, so a replacement material only needs
+ * the ones it actually uses.
  */
 UCLASS(Abstract)
 class MODULARMINIMAP_API UMinimapWidgetBase : public UCommonUserWidget

@@ -45,7 +45,33 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Style")
 	FLinearColor OutlineColor = FLinearColor(0.55f, 0.55f, 0.65f, 1.0f);
 
-	/** Outline thickness in map texels. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Style", meta = (ClampMin = "0.5", ClampMax = "8.0"))
-	float OutlineThickness = 1.5f;
+	/**
+	 * Outline width in screen pixels, held constant across zoom levels.
+	 *
+	 * The styling material recovers a distance to the walkable boundary rather than dilating the
+	 * coverage mask, so this and the widths below are real screen-space measurements: they do not
+	 * drift with zoom, map resolution or widget size.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Style|Outline", meta = (ClampMin = "0.0", ClampMax = "16.0"))
+	float OutlineWidthPixels = 2.0f;
+
+	/** Width of the outline's anti-aliased falloff in screen pixels. 0 is as crisp as the mask allows. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Style|Outline", meta = (ClampMin = "0.0", ClampMax = "8.0"))
+	float OutlineSoftnessPixels = 1.0f;
+
+	/** Shifts the outline band inside (+) or outside (-) the walkable boundary, in screen pixels. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Style|Outline", meta = (ClampMin = "-8.0", ClampMax = "8.0"))
+	float OutlineOffsetPixels = 0.0f;
+
+	/** Width of the walkable fill's fade at its boundary, in screen pixels. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Style|Outline", meta = (ClampMin = "0.0", ClampMax = "8.0"))
+	float FillFeatherPixels = 1.5f;
+
+	/** Color of the glow bleeding outward from the outline. Its alpha scales the effect. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Style|Outline")
+	FLinearColor GlowColor = FLinearColor(0.35f, 0.38f, 0.55f, 0.5f);
+
+	/** How far the outer glow reaches past the outline, in screen pixels. 0 disables it. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Style|Outline", meta = (ClampMin = "0.0", ClampMax = "24.0"))
+	float GlowWidthPixels = 0.0f;
 };

@@ -73,11 +73,24 @@ UMinimapSubsystem::Get(this)->ImportFogState(Blob);   // additive; safe across b
 ## Styling material contract
 
 `UMinimapWidgetBase.MapMaterial` (defaults to `/ModularMinimap/Materials/M_MinimapBase`) receives:
-textures `MapTexture`, `FogExplored`, `FogVisible`; vectors `CenterUV` (RG), `FillColor`,
-`OutlineColor`; scalars `UVSpan`, `RotationRad`, `MaskShape` (0 rect / 1 circle), `MapTexelCount`,
-`OutlineTexels`, `ExploredDim`, `FogEnabled`, `BackgroundIsMask` (1 = coverage mask styled by the
-material, 0 = authored full-color texture). Swap in your own material honoring the same parameters
-for a different look.
+textures `MapTexture`, `FogExplored`, `FogVisible`; vectors `CenterUV` (RG), `AspectScale` (RG),
+`FillColor`, `OutlineColor`, `GlowColor`; scalars `UVSpan`, `RotationRad`, `MaskShape`
+(0 rect / 1 circle), `MapTexelCount`, `ExploredDim`, `FogEnabled`, `BackgroundIsMask` (1 = coverage
+mask styled by the material, 0 = authored full-color texture). Swap in your own material honoring
+the same parameters for a different look.
+
+The generated material finds the walkable edge by blurring the coverage mask into a ramp and
+inverting that ramp back into a signed distance to the boundary, rather than dilating the mask by a
+texel count. Every band is a `smoothstep` on that distance in **screen pixels**, so outlines stay
+smooth on diagonals and hold their width as the view zooms. The screen-space knobs live on
+`UMinimapLevelSettings` and feed the scalars of the same name: `OutlineWidthPixels`,
+`OutlineSoftnessPixels`, `OutlineOffsetPixels` (bias the band inside/outside the boundary),
+`FillFeatherPixels` and `GlowWidthPixels` (0 disables the glow).
+
+Outline sharpness is ultimately bounded by the coverage texture: the walkable mask is stamped as
+hard triangles into a `CoverageTextureSize`-square render target (1024 by default), so at high zoom
+the boundary can only be as precise as one texel of that grid. Raising `CoverageTextureSize` to 2048
+is the cheapest way to buy more detail.
 
 ## Development
 
