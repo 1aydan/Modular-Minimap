@@ -140,8 +140,9 @@ void UMinimapSubsystem::DumpCoverageToSaved()
 			}
 		}
 
-		// Gathering with an invalid ref collects every tile at once; if this is also empty the
-		// navmesh itself has no built geometry rather than the per-tile path being at fault.
+		// Gathering with an invalid ref collects every tile at once — or, while generation is
+		// restricted to the active tile set, only that set. If this is also empty the navmesh itself
+		// has no built geometry rather than the per-tile path being at fault.
 		FRecastDebugGeometry AllGeometry;
 		NavMesh->GetDebugGeometryForTile(AllGeometry, FNavTileRef());
 		int32 TotalTriangles = 0;
@@ -150,8 +151,14 @@ void UMinimapSubsystem::DumpCoverageToSaved()
 			TotalTriangles += AllGeometry.AreaIndices[AreaIndex].Num() / 3;
 		}
 
-		UE_LOG(LogModularMinimap, Log, TEXT("Minimap: navmesh '%s' tile slots=%d, tiles with bounds=%d, active set=%d, all-tile gather verts=%d tris=%d"),
-			*NavMesh->GetName(), LiveTiles.Num(), TilesWithBounds, NavMesh->GetActiveTileSet().Num(),
+		// GetActiveTileSet asserts when the navmesh has no generator, which is the normal state for
+		// a statically built navmesh in a cooked build.
+		const bool bRestricted = FMinimapNavmeshCapture::IsRestrictedToActiveTiles(*NavMesh);
+		const int32 NumActiveTiles = NavMesh->GetGenerator() != nullptr ? NavMesh->GetActiveTileSet().Num() : 0;
+
+		UE_LOG(LogModularMinimap, Log, TEXT("Minimap: navmesh '%s' tile slots=%d, tiles with bounds=%d, active set=%d (restricted=%s), all-tile gather verts=%d tris=%d"),
+			*NavMesh->GetName(), LiveTiles.Num(), TilesWithBounds, NumActiveTiles,
+			bRestricted ? TEXT("yes") : TEXT("no"),
 			AllGeometry.MeshVerts.Num(), TotalTriangles);
 	}
 	else

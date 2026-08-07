@@ -10,12 +10,44 @@
 #include "Kismet/KismetRenderingLibrary.h"
 #include "ModularMinimapModule.h"
 
+#if WITH_RECAST
+#include "NavMesh/RecastNavMeshGenerator.h"
+#endif
+
+/** Number of consumed entries tolerated at the head of the pending queue before compacting. */
+static constexpr int32 GPendingCompactThreshold = 256;
+
+bool FMinimapNavmeshCapture::IsRestrictedToActiveTiles(const ARecastNavMesh& NavMesh)
+{
+#if WITH_RECAST
+	// Mirrors the guard inside FPImplRecastNavMesh::GetDebugGeometryForTile. GetActiveTileSet()
+	// asserts on a missing generator, so the null check has to come first.
+	const FRecastNavMeshGenerator* Generator = static_cast<const FRecastNavMeshGenerator*>(NavMesh.GetGenerator());
+	return Generator != nullptr
+		&& Generator->IsBuildingRestrictedToActiveTiles()
+		&& !NavMesh.GetActiveTileSet().IsEmpty();
+#else
+	return false;
+#endif
+}
+
 void FMinimapNavmeshCapture::Reset()
 {
 	SeenTileRefs.Reset();
 	PendingTiles.Reset();
+	PendingCursor = 0;
 	TileCache.Reset();
 	PendingBounds = FBox2D(ForceInit);
+}
+
+void FMinimapNavmeshCapture::ForgetCell(const FIntVector& Cell, const FNavTileRef& Ref)
+{
+	// A newer ref for the same cell may already have been queued; only the failing one is forgotten.
+	const FNavTileRef* SeenRef = SeenTileRefs.Find(Cell);
+	if (SeenRef != nullptr && *SeenRef == Ref)
+	{
+		SeenTileRefs.Remove(Cell);
+	}
 }
 
 int32 FMinimapNavmeshCapture::DiffTiles(const ARecastNavMesh& NavMesh)
@@ -23,25 +55,52 @@ int32 FMinimapNavmeshCapture::DiffTiles(const ARecastNavMesh& NavMesh)
 	TArray<FNavTileRef> LiveTiles;
 	NavMesh.GetAllNavMeshTiles(LiveTiles);
 
+	const bool bRestricted = IsRestrictedToActiveTiles(NavMesh);
+	const TSet<FIntPoint>* ActiveTiles = bRestricted ? &NavMesh.GetActiveTileSet() : nullptr;
+
 	int32 NumQueued = 0;
 	for (const FNavTileRef& TileRef : LiveTiles)
 	{
-		if (!TileRef.IsValid() || SeenTileRefs.Contains(TileRef))
+		if (!TileRef.IsValid())
 		{
 			continue;
 		}
 
 		// GetAllNavMeshTiles yields a ref for every tile *slot* the navmesh allocated, including
-		// unused ones. Those have no bounds and no geometry, so skip them without marking them
-		// seen: the same slot becomes a real tile once generation fills it in.
+		// unused ones. Those have no header, so the coordinate lookup fails and they are skipped
+		// without being marked seen: the same slot becomes a real tile once generation fills it in.
+		int32 TileX = 0;
+		int32 TileY = 0;
+		int32 TileLayer = 0;
+		if (!NavMesh.GetNavMeshTileXY(TileRef, TileX, TileY, TileLayer))
+		{
+			continue;
+		}
+
+		const FIntVector Cell(TileX, TileY, TileLayer);
+		const FNavTileRef* SeenRef = SeenTileRefs.Find(Cell);
+		if (SeenRef != nullptr && *SeenRef == TileRef)
+		{
+			continue;
+		}
+
 		const FBox TileBounds = NavMesh.GetNavMeshTileBounds(TileRef);
 		if (!TileBounds.IsValid)
 		{
 			continue;
 		}
 
-		SeenTileRefs.Add(TileRef);
-		PendingTiles.Add(TileRef);
+		// While building is restricted to the active tile set, per-tile debug gathering returns
+		// nothing for tiles outside it. Queuing those would burn the stamping budget on tiles that
+		// cannot produce geometry, so leave them unseen and pick them up if an invoker brings the
+		// cell back into the set.
+		if (ActiveTiles != nullptr && !ActiveTiles->Contains(FIntPoint(TileX, TileY)))
+		{
+			continue;
+		}
+
+		SeenTileRefs.Add(Cell, TileRef);
+		PendingTiles.Add(FPendingTile{TileRef, Cell});
 		++NumQueued;
 
 		PendingBounds += FBox2D(
@@ -54,40 +113,48 @@ int32 FMinimapNavmeshCapture::DiffTiles(const ARecastNavMesh& NavMesh)
 
 int32 FMinimapNavmeshCapture::StampPendingTiles(UWorld& World, const ARecastNavMesh& NavMesh, UTextureRenderTarget2D& RenderTarget, const FMinimapProjection& Projection, int32 MaxTiles)
 {
-	if (PendingTiles.IsEmpty() || !Projection.IsValid())
+	if (!HasPendingTiles() || !Projection.IsValid())
 	{
 		return 0;
 	}
+
+	const bool bRestricted = IsRestrictedToActiveTiles(NavMesh);
+	const TSet<FIntPoint>* ActiveTiles = bRestricted ? &NavMesh.GetActiveTileSet() : nullptr;
 
 	const FIntPoint TextureSize(RenderTarget.SizeX, RenderTarget.SizeY);
 	TArray<FCanvasUVTri> Triangles;
 	int32 NumProcessed = 0;
 
-	while (NumProcessed < MaxTiles && !PendingTiles.IsEmpty())
+	// Oldest first: a tile only stays gatherable while it is active, so the entries most at risk of
+	// going stale are the ones that have been waiting longest.
+	while (NumProcessed < MaxTiles && HasPendingTiles())
 	{
-		const FNavTileRef TileRef = PendingTiles.Pop(EAllowShrinking::No);
+		const FPendingTile Pending = PendingTiles[PendingCursor++];
 		++NumProcessed;
+
+		// The cell may have dropped out of the active set between queuing and stamping. Gathering
+		// now would silently return nothing, so forget the cell instead of recording a miss and let
+		// a later diff re-queue it if the generator brings it back.
+		if (ActiveTiles != nullptr && !ActiveTiles->Contains(FIntPoint(Pending.Cell.X, Pending.Cell.Y)))
+		{
+			ForgetCell(Pending.Cell, Pending.Ref);
+			continue;
+		}
 
 		// The return value reports whether collection finished for *all* tiles; when asking for one
 		// specific tile it is false even on success, so it must not be read as a failure signal.
 		FRecastDebugGeometry Geometry;
-		NavMesh.GetDebugGeometryForTile(Geometry, TileRef);
+		NavMesh.GetDebugGeometryForTile(Geometry, Pending.Ref);
 
 		if (Geometry.MeshVerts.IsEmpty())
 		{
-			// The tile exists but exposes no walkable geometry right now. With invoker-driven
-			// generation this is normal for tiles outside the current active set, so forget the ref
-			// and let a later diff retry it once the tile becomes active.
-			SeenTileRefs.Remove(TileRef);
+			// The tile is active but exposes no walkable geometry, or was rebuilt under a fresh salt
+			// since it was queued. Either way the cell stays recorded against this ref so it is not
+			// retried every poll; a rebuild changes the ref and diffs as new on its own.
 			continue;
 		}
 
-		int32 TileX = 0;
-		int32 TileY = 0;
-		int32 TileLayer = 0;
-		NavMesh.GetNavMeshTileXY(TileRef, TileX, TileY, TileLayer);
-
-		FMinimapTileGeometry& Cached = TileCache.FindOrAdd(FIntVector(TileX, TileY, TileLayer));
+		FMinimapTileGeometry& Cached = TileCache.FindOrAdd(Pending.Cell);
 		Cached.TriangleVerts.Reset();
 
 		for (int32 AreaIndex = 0; AreaIndex < RECAST_MAX_AREAS; ++AreaIndex)
@@ -105,6 +172,17 @@ int32 FMinimapNavmeshCapture::StampPendingTiles(UWorld& World, const ARecastNavM
 		}
 
 		AppendTileTriangles(Cached, Projection, TextureSize, Triangles);
+	}
+
+	if (!HasPendingTiles())
+	{
+		PendingTiles.Reset();
+		PendingCursor = 0;
+	}
+	else if (PendingCursor >= GPendingCompactThreshold)
+	{
+		PendingTiles.RemoveAt(0, PendingCursor, EAllowShrinking::No);
+		PendingCursor = 0;
 	}
 
 	if (Triangles.Num() > 0)
