@@ -12,7 +12,7 @@
  * mouse wheel zooms, and Pan/Recenter are BlueprintCallable so games can drive them from their
  * own (gamepad) input actions.
  */
-UCLASS()
+UCLASS(Blueprintable)
 class MODULARMINIMAP_API UMinimapFullMapViewWidget : public UMinimapWidgetBase
 {
 	GENERATED_BODY()
