@@ -79,19 +79,6 @@ textures `MapTexture`, `FogExplored`, `FogVisible`; vectors `CenterUV` (RG), `Fi
 material, 0 = authored full-color texture). Swap in your own material honoring the same parameters
 for a different look.
 
-## DarkTower integration notes (game-side)
-
-- **HUD minimap**: add a `BindWidgetOptional` slot for a `UMinimapWidget` subclass in `UDTHudWidget` / `WBP_HUD`.
-- **Full map**: `ADTPlayerController::ToggleWidgetOnLayer<UMinimapFullMapWidget>` on `UI.Layer.Game`;
-  `IA_Action_OpenMap` already exists.
-- **Rotation source**: implement `IMinimapRotationSource` returning the RPGCamera spring-arm yaw and
-  register with `UMinimapSubsystem::SetRotationSource`.
-- **Objectives**: subscribe `UQuestSubsystem::OnQuestStateChanged` / `OnQuestObjectiveProgress` in a
-  game-side adapter, map objective IDs to world locations, and drive
-  `AddObjectiveAtLocation`/`RemoveObjective` (quest objectives carry no world position themselves).
-- **Fog saves**: store the fog blob per level (e.g. keyed by dungeon seed + floor) in `UDTSaveGame`
-  via the `ISaveable` seam.
-
 ## Development
 
 Developed against a host project via directory junction (folder name must be `ModularMinimap`):
