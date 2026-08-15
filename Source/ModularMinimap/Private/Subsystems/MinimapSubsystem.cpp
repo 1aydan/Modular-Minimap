@@ -3,6 +3,7 @@
 #include "Subsystems/MinimapSubsystem.h"
 
 #include "Actors/MinimapBoundsVolume.h"
+#include "Components/MinimapRevealerComponent.h"
 #include "Components/MinimapTrackerComponent.h"
 #include "Data/MinimapLevelSettings.h"
 #include "Engine/TextureRenderTarget2D.h"
@@ -77,6 +78,7 @@ void UMinimapSubsystem::Deinitialize()
 		FogManager = nullptr;
 	}
 
+	Revealers.Reset();
 	Capture.Reset();
 	Super::Deinitialize();
 }
@@ -85,13 +87,9 @@ void UMinimapSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 {
 	Super::OnWorldBeginPlay(InWorld);
 
-	if (GetDefault<UMinimapDeveloperSettings>()->bEnableFogOfWar)
-	{
-		FogManager = NewObject<UMinimapFogManager>(this);
-		FogManager->Initialize(this);
-	}
-
+	// Level config first: it carries the per-level fog mode that fog resolution reads.
 	ResolveLevelConfig(InWorld);
+	RefreshFogEnabled();
 
 	if (bCaptureEnabled)
 	{
@@ -106,10 +104,11 @@ void UMinimapSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 		bDiffRequested = true;
 	}
 
-	UE_LOG(LogModularMinimap, Log, TEXT("MinimapSubsystem active for world '%s' (capture %s, bounds %s)"),
+	UE_LOG(LogModularMinimap, Log, TEXT("MinimapSubsystem active for world '%s' (capture %s, bounds %s, fog %s)"),
 		*InWorld.GetName(),
 		bCaptureEnabled ? TEXT("enabled") : TEXT("disabled: authored background"),
-		Projection.IsValid() ? TEXT("resolved") : TEXT("pending"));
+		Projection.IsValid() ? TEXT("resolved") : TEXT("pending"),
+		bFogEnabled ? TEXT("enabled") : TEXT("disabled"));
 
 }
 
@@ -184,7 +183,7 @@ void UMinimapSubsystem::Tick(float DeltaTime)
 		UpdateCapture(DeltaTime);
 	}
 
-	if (FogManager != nullptr)
+	if (bFogEnabled && FogManager != nullptr)
 	{
 		FogManager->Update(DeltaTime);
 	}
@@ -222,27 +221,87 @@ void UMinimapSubsystem::SetLevelSettings(UMinimapLevelSettings* InSettings)
 {
 	ActiveLevelSettings = InSettings;
 	ApplyLevelSettings();
+	FogOverride = EMinimapFogMode::Inherit;
+	RefreshFogEnabled();
 	OnMapTextureChanged.Broadcast();
+}
+
+void UMinimapSubsystem::SetFogOfWarEnabled(bool bEnabled)
+{
+	FogOverride = bEnabled ? EMinimapFogMode::Enabled : EMinimapFogMode::Disabled;
+	RefreshFogEnabled();
+}
+
+void UMinimapSubsystem::ClearFogOfWarOverride()
+{
+	FogOverride = EMinimapFogMode::Inherit;
+	RefreshFogEnabled();
+}
+
+bool UMinimapSubsystem::ResolveFogEnabled() const
+{
+	if (FogOverride != EMinimapFogMode::Inherit)
+	{
+		return FogOverride == EMinimapFogMode::Enabled;
+	}
+
+	if (ActiveLevelSettings != nullptr && ActiveLevelSettings->FogMode != EMinimapFogMode::Inherit)
+	{
+		return ActiveLevelSettings->FogMode == EMinimapFogMode::Enabled;
+	}
+
+	return GetDefault<UMinimapDeveloperSettings>()->bEnableFogOfWar;
+}
+
+void UMinimapSubsystem::RefreshFogEnabled()
+{
+	const bool bEnabled = ResolveFogEnabled();
+
+	// Created on first enable and kept from then on: the explored mask and its stamp history must
+	// survive a toggle, so that re-enabling resumes exploration instead of resetting it. Levels that
+	// never enable fog never pay for the render targets.
+	if (bEnabled && FogManager == nullptr)
+	{
+		FogManager = NewObject<UMinimapFogManager>(this);
+		FogManager->Initialize(this);
+	}
+
+	if (bEnabled == bFogEnabled)
+	{
+		return;
+	}
+
+	bFogEnabled = bEnabled;
+
+	// Current vision is stale after any time spent disabled; redraw it on the next tick rather than
+	// after the update interval, so the toggle does not flash an old vision circle.
+	if (bFogEnabled && FogManager != nullptr)
+	{
+		FogManager->RequestImmediateUpdate();
+	}
+
+	UE_LOG(LogModularMinimap, Log, TEXT("Minimap fog of war %s."), bFogEnabled ? TEXT("enabled") : TEXT("disabled"));
+	OnFogEnabledChanged.Broadcast(bFogEnabled);
 }
 
 UTextureRenderTarget2D* UMinimapSubsystem::GetFogExploredRenderTarget() const
 {
-	return FogManager != nullptr ? FogManager->GetExploredRenderTarget() : nullptr;
+	return bFogEnabled && FogManager != nullptr ? FogManager->GetExploredRenderTarget() : nullptr;
 }
 
 UTextureRenderTarget2D* UMinimapSubsystem::GetFogVisibleRenderTarget() const
 {
-	return FogManager != nullptr ? FogManager->GetVisibleRenderTarget() : nullptr;
+	return bFogEnabled && FogManager != nullptr ? FogManager->GetVisibleRenderTarget() : nullptr;
 }
 
 bool UMinimapSubsystem::IsWorldExplored(const FVector& WorldLocation) const
 {
-	return FogManager == nullptr || FogManager->IsWorldExplored(WorldLocation);
+	return !bFogEnabled || FogManager == nullptr || FogManager->IsWorldExplored(WorldLocation);
 }
 
 bool UMinimapSubsystem::IsWorldVisible(const FVector& WorldLocation) const
 {
-	return FogManager == nullptr || FogManager->IsWorldVisible(WorldLocation);
+	return !bFogEnabled || FogManager == nullptr || FogManager->IsWorldVisible(WorldLocation);
 }
 
 bool UMinimapSubsystem::ExportFogState(TArray<uint8>& OutData)
@@ -252,7 +311,13 @@ bool UMinimapSubsystem::ExportFogState(TArray<uint8>& OutData)
 
 bool UMinimapSubsystem::ImportFogState(const TArray<uint8>& Data)
 {
-	return FogManager != nullptr && FogManager->ImportState(Data);
+	if (FogManager == nullptr)
+	{
+		UE_LOG(LogModularMinimap, Warning, TEXT("ImportFogState: fog of war has never been enabled in this world; nothing to import into."));
+		return false;
+	}
+
+	return FogManager->ImportState(Data);
 }
 
 void UMinimapSubsystem::RegisterTracker(UMinimapTrackerComponent* Tracker)
@@ -269,6 +334,27 @@ void UMinimapSubsystem::UnregisterTracker(UMinimapTrackerComponent* Tracker)
 	{
 		return !Entry.IsValid() || Entry.Get() == Tracker;
 	});
+}
+
+void UMinimapSubsystem::RegisterRevealer(UMinimapRevealerComponent* Revealer)
+{
+	if (Revealer != nullptr)
+	{
+		Revealers.AddUnique(Revealer);
+	}
+}
+
+void UMinimapSubsystem::UnregisterRevealer(UMinimapRevealerComponent* Revealer)
+{
+	Revealers.RemoveAll([Revealer](const TWeakObjectPtr<UMinimapRevealerComponent>& Entry)
+	{
+		return !Entry.IsValid() || Entry.Get() == Revealer;
+	});
+
+	if (FogManager != nullptr)
+	{
+		FogManager->ForgetRevealer(Revealer);
+	}
 }
 
 FMinimapObjectiveHandle UMinimapSubsystem::AddObjectiveAtLocation(FVector WorldLocation, FMinimapIconStyle Style)

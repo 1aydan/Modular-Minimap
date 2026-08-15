@@ -14,6 +14,7 @@ class ANavigationData;
 class ARecastNavMesh;
 class UMinimapFogManager;
 class UMinimapLevelSettings;
+class UMinimapRevealerComponent;
 class UMinimapTrackerComponent;
 class UTexture;
 class UTexture2D;
@@ -80,6 +81,10 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Minimap")
 	FOnMinimapObjectiveClicked OnObjectiveClicked;
 
+	/** Broadcast when fog of war is switched on or off. Map widgets rebind their material on this. */
+	UPROPERTY(BlueprintAssignable, Category = "Minimap|Fog")
+	FOnMinimapFogEnabledChanged OnFogEnabledChanged;
+
 	/** Current world-to-UV projection for the map. Invalid until bounds are resolved. */
 	UFUNCTION(BlueprintPure, Category = "Minimap")
 	FMinimapProjection GetProjection() const { return Projection; }
@@ -96,9 +101,35 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Minimap")
 	UMinimapLevelSettings* GetLevelSettings() const { return ActiveLevelSettings; }
 
-	/** Assign level settings at runtime; re-resolves the background override and map bounds. */
+	/**
+	 * Assign level settings at runtime; re-resolves the background override, map bounds and fog mode.
+	 * Any runtime fog override is dropped, since the new settings describe a new area.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Minimap")
 	void SetLevelSettings(UMinimapLevelSettings* InSettings);
+
+	/**
+	 * Whether fog of war is currently active for this world.
+	 *
+	 * Resolved, highest priority first, from the runtime override (SetFogOfWarEnabled), the active
+	 * level settings' FogMode, and the project-wide bEnableFogOfWar.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Minimap|Fog")
+	bool IsFogOfWarEnabled() const { return bFogEnabled; }
+
+	/**
+	 * Turn fog of war on or off at runtime, overriding the level and project settings.
+	 *
+	 * Disabling keeps whatever has already been explored, so re-enabling resumes rather than resets;
+	 * while disabled the map renders unfogged and every IsWorldExplored/IsWorldVisible query answers
+	 * true. Cleared by SetLevelSettings — see ClearFogOfWarOverride.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Minimap|Fog")
+	void SetFogOfWarEnabled(bool bEnabled);
+
+	/** Drop the runtime override and fall back to the level settings / project setting. */
+	UFUNCTION(BlueprintCallable, Category = "Minimap|Fog")
+	void ClearFogOfWarOverride();
 
 	/** Explored-area fog mask, or null while fog is disabled/uninitialized. */
 	UFUNCTION(BlueprintPure, Category = "Minimap|Fog")
@@ -165,10 +196,22 @@ public:
 	void RegisterTracker(UMinimapTrackerComponent* Tracker);
 	void UnregisterTracker(UMinimapTrackerComponent* Tracker);
 
+	/**
+	 * Register a fog revealer. Called by the revealer component.
+	 *
+	 * The registry lives here rather than on the fog manager so revealers placed while fog is off are
+	 * still known when fog is switched on later (and the manager is created).
+	 */
+	void RegisterRevealer(UMinimapRevealerComponent* Revealer);
+	void UnregisterRevealer(UMinimapRevealerComponent* Revealer);
+
+	/** Live revealer list for the fog manager. Entries may be stale weak pointers; callers must check. */
+	const TArray<TWeakObjectPtr<UMinimapRevealerComponent>>& GetRevealers() const { return Revealers; }
+
 	/** Live tracker list for icon painting. Entries may be stale weak pointers; callers must check. */
 	const TArray<TWeakObjectPtr<UMinimapTrackerComponent>>& GetTrackedComponents() const { return TrackedComponents; }
 
-	/** Fog-of-war manager; null when fog is disabled in the developer settings. */
+	/** Fog-of-war manager; null until fog has been enabled at least once for this world. */
 	UMinimapFogManager* GetFogManager() const { return FogManager; }
 
 	/** Load one of the plugin's generated icon textures (e.g. TX_PlayerArrow); null when absent. */
@@ -195,6 +238,13 @@ protected:
 
 	void ResolveLevelConfig(UWorld& InWorld);
 	void ApplyLevelSettings();
+
+	/** Runtime override, else level settings, else the project setting. */
+	bool ResolveFogEnabled() const;
+
+	/** Re-resolves fog state, creating the manager on first enable and broadcasting on change. */
+	void RefreshFogEnabled();
+
 	void ResolveInitialBounds(UWorld& InWorld);
 	void EnsureCoverageRenderTarget();
 	void HandleBoundsGrowth();
@@ -218,6 +268,12 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<UMinimapFogManager> FogManager;
 
+	/** Resolved live fog state; see IsFogOfWarEnabled. */
+	bool bFogEnabled = false;
+
+	/** Runtime fog override; Inherit means the level/project settings decide. */
+	EMinimapFogMode FogOverride = EMinimapFogMode::Inherit;
+
 	/** True when bounds came from an authored source and must not auto-grow. */
 	bool bBoundsLocked = false;
 
@@ -230,6 +286,9 @@ protected:
 
 	/** Registered actor trackers. */
 	TArray<TWeakObjectPtr<UMinimapTrackerComponent>> TrackedComponents;
+
+	/** Registered fog revealers, kept whether or not fog is currently enabled. */
+	TArray<TWeakObjectPtr<UMinimapRevealerComponent>> Revealers;
 
 	/** Explicitly hidden (false) or shown (true) categories; unset categories default to visible. */
 	TMap<FGameplayTag, bool> CategoryVisibility;

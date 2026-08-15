@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "MinimapTypes.h"
 #include "MinimapLevelSettings.generated.h"
 
 class UTexture2D;
@@ -36,6 +37,16 @@ public:
 	/** Explicit world-space XY map bounds. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Bounds", meta = (EditCondition = "bOverrideBounds"))
 	FBox2D BoundsOverride = FBox2D(ForceInit);
+
+	/**
+	 * Per-level fog-of-war switch. Leave on Inherit to use the project-wide setting; set Disabled for
+	 * levels that should show the whole map immediately (towns, hubs), Enabled for levels that need
+	 * fog even when the project default is off.
+	 *
+	 * A runtime call to UMinimapSubsystem::SetFogOfWarEnabled takes precedence over this.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Fog")
+	EMinimapFogMode FogMode = EMinimapFogMode::Inherit;
 
 	/** Fill color for walkable area on the generated map. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Style")

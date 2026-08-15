@@ -54,6 +54,7 @@ void UMinimapWidgetBase::NativeConstruct()
 	if (Subsystem)
 	{
 		Subsystem->OnMapTextureChanged.AddUniqueDynamic(this, &UMinimapWidgetBase::HandleMapTextureChanged);
+		Subsystem->OnFogEnabledChanged.AddUniqueDynamic(this, &UMinimapWidgetBase::HandleFogEnabledChanged);
 	}
 
 	RefreshMapBrush();
@@ -65,6 +66,7 @@ void UMinimapWidgetBase::NativeDestruct()
 	if (Subsystem)
 	{
 		Subsystem->OnMapTextureChanged.RemoveDynamic(this, &UMinimapWidgetBase::HandleMapTextureChanged);
+		Subsystem->OnFogEnabledChanged.RemoveDynamic(this, &UMinimapWidgetBase::HandleFogEnabledChanged);
 	}
 
 	Super::NativeDestruct();
@@ -246,10 +248,12 @@ void UMinimapWidgetBase::RefreshMapBrush()
 			MapMID->SetScalarParameterValue(MinimapParam_FillFeatherPixels, Style->FillFeatherPixels);
 			MapMID->SetScalarParameterValue(MinimapParam_GlowWidthPixels, Style->GlowWidthPixels);
 
+			// The subsystem already returns null targets while fog is off, for whatever reason it is off
+			// (project setting, level settings, runtime override).
 			const UMinimapDeveloperSettings* DevSettings = GetDefault<UMinimapDeveloperSettings>();
 			UTextureRenderTarget2D* FogExplored = Subsystem->GetFogExploredRenderTarget();
 			UTextureRenderTarget2D* FogVisible = Subsystem->GetFogVisibleRenderTarget();
-			const bool bFogActive = DevSettings->bEnableFogOfWar && FogExplored != nullptr && FogVisible != nullptr;
+			const bool bFogActive = Subsystem->IsFogOfWarEnabled() && FogExplored != nullptr && FogVisible != nullptr;
 			if (bFogActive)
 			{
 				MapMID->SetTextureParameterValue(MinimapParam_FogExplored, FogExplored);
@@ -321,6 +325,11 @@ void UMinimapWidgetBase::PushMaterialParameters(const FVector2D& AspectScale)
 }
 
 void UMinimapWidgetBase::HandleMapTextureChanged()
+{
+	RefreshMapBrush();
+}
+
+void UMinimapWidgetBase::HandleFogEnabledChanged(bool bEnabled)
 {
 	RefreshMapBrush();
 }

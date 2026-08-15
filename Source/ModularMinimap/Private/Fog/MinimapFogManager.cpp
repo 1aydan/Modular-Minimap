@@ -32,7 +32,6 @@ void UMinimapFogManager::Initialize(UMinimapSubsystem* InOwner)
 
 void UMinimapFogManager::Deinitialize()
 {
-	Revealers.Reset();
 	LastStampPositions.Reset();
 	StampHistory.Reset();
 	ExploredGrid.Reset();
@@ -44,11 +43,12 @@ void UMinimapFogManager::Update(float DeltaTime)
 	const UMinimapDeveloperSettings* Settings = GetDefault<UMinimapDeveloperSettings>();
 
 	UpdateAccumulator += DeltaTime;
-	if (UpdateAccumulator < Settings->FogUpdateInterval)
+	if (UpdateAccumulator < Settings->FogUpdateInterval && !bForceNextUpdate)
 	{
 		return;
 	}
 	UpdateAccumulator = 0.0f;
+	bForceNextUpdate = false;
 
 	UMinimapSubsystem* OwnerSubsystem = Owner.Get();
 	if (OwnerSubsystem == nullptr || !OwnerSubsystem->GetProjection().IsValid())
@@ -65,16 +65,10 @@ void UMinimapFogManager::Update(float DeltaTime)
 
 	// Collect explored stamps from revealers that moved far enough.
 	TArray<FRevealStamp> NewStamps;
-	for (int32 Index = Revealers.Num() - 1; Index >= 0; --Index)
+	for (const TWeakObjectPtr<UMinimapRevealerComponent>& WeakRevealer : OwnerSubsystem->GetRevealers())
 	{
-		const UMinimapRevealerComponent* Revealer = Revealers[Index].Get();
-		if (Revealer == nullptr)
-		{
-			Revealers.RemoveAtSwap(Index);
-			continue;
-		}
-
-		if (!Revealer->bRevealerEnabled)
+		const UMinimapRevealerComponent* Revealer = WeakRevealer.Get();
+		if (Revealer == nullptr || !Revealer->bRevealerEnabled)
 		{
 			continue;
 		}
@@ -134,21 +128,8 @@ void UMinimapFogManager::HandleProjectionChanged()
 	RebuildGridFromHistory();
 }
 
-void UMinimapFogManager::RegisterRevealer(UMinimapRevealerComponent* Revealer)
+void UMinimapFogManager::ForgetRevealer(const UMinimapRevealerComponent* Revealer)
 {
-	if (Revealer != nullptr)
-	{
-		Revealers.AddUnique(Revealer);
-	}
-}
-
-void UMinimapFogManager::UnregisterRevealer(UMinimapRevealerComponent* Revealer)
-{
-	Revealers.RemoveAll([Revealer](const TWeakObjectPtr<UMinimapRevealerComponent>& Entry)
-	{
-		return !Entry.IsValid() || Entry.Get() == Revealer;
-	});
-
 	if (Revealer != nullptr)
 	{
 		LastStampPositions.Remove(FObjectKey(Revealer));
@@ -177,9 +158,15 @@ bool UMinimapFogManager::IsWorldExplored(const FVector& WorldLocation) const
 
 bool UMinimapFogManager::IsWorldVisible(const FVector& WorldLocation) const
 {
+	const UMinimapSubsystem* OwnerSubsystem = Owner.Get();
+	if (OwnerSubsystem == nullptr)
+	{
+		return false;
+	}
+
 	const FVector2D WorldPos(WorldLocation.X, WorldLocation.Y);
 
-	for (const TWeakObjectPtr<UMinimapRevealerComponent>& WeakRevealer : Revealers)
+	for (const TWeakObjectPtr<UMinimapRevealerComponent>& WeakRevealer : OwnerSubsystem->GetRevealers())
 	{
 		const UMinimapRevealerComponent* Revealer = WeakRevealer.Get();
 		if (Revealer == nullptr || !Revealer->bRevealerEnabled)
@@ -516,7 +503,7 @@ void UMinimapFogManager::StampVisible()
 	UKismetRenderingLibrary::BeginDrawCanvasToRenderTarget(World, VisibleRT, Canvas, CanvasSize, Context);
 	if (Canvas != nullptr)
 	{
-		for (const TWeakObjectPtr<UMinimapRevealerComponent>& WeakRevealer : Revealers)
+		for (const TWeakObjectPtr<UMinimapRevealerComponent>& WeakRevealer : OwnerSubsystem->GetRevealers())
 		{
 			const UMinimapRevealerComponent* Revealer = WeakRevealer.Get();
 			if (Revealer == nullptr || !Revealer->bRevealerEnabled)

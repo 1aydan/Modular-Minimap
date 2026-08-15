@@ -14,8 +14,9 @@ background textures are supported as an optional per-level override.
 - **Corner minimap** (`UMinimapWidget`) — circular/rectangular mask, rotate-with-view, zoom steps
 - **Full-screen map overlay** (`UMinimapFullMapWidget`, a `UCommonActivatableWidget`) — drag pan,
   wheel zoom, recenter, CommonUI back action closes; gamepad via `PanView`/`ZoomView` BlueprintCallables
-- **Fog of war** — unexplored/explored/currently-visible tiers, revealer components, and a
-  compressed-bytes `ExportFogState`/`ImportFogState` API so any save system can persist exploration
+- **Fog of war** — unexplored/explored/currently-visible tiers, revealer components, per-level and
+  runtime on/off (fogged dungeon, fog-free town), and a compressed-bytes
+  `ExportFogState`/`ImportFogState` API so any save system can persist exploration
 - **Markers** — `UMinimapTrackerComponent` on any actor: brush, tint, gameplay-tag category
   (hierarchical show/hide), edge clamping, fog visibility rules, click events
 - **Objective markers** — handle-based `AddObjectiveAtLocation`/`AddObjectiveOnActor` API with
@@ -60,6 +61,27 @@ captures navmesh tiles incrementally, and runs fog.
 | `UMinimapLevelSettings` with `BoundsOverride` | Bounds locked to the override |
 | `UMinimapLevelSettings` with `BackgroundTexture` | Authored texture shown; navmesh capture off; fog/icons still run |
 | **Tools → Bake Minimap Background** | Bakes the current level's full navmesh into a texture + settings asset (static levels only — invoker-generated navmesh can't bake in-editor) |
+
+## Fog on/off per level
+
+Fog resolves from three layers, highest priority first:
+
+| Layer | Where |
+| --- | --- |
+| Runtime override | `SetFogOfWarEnabled(bool)` / `ClearFogOfWarOverride()` on the subsystem |
+| Per level | `UMinimapLevelSettings.FogMode` — `Inherit` / `Enabled` / `Disabled` |
+| Project | Project Settings → Plugins → Modular Minimap → `bEnableFogOfWar` |
+
+So a town's level settings asset sets `FogMode = Disabled` and a dungeon's leaves `Inherit`, with no
+code involved. `IsFogOfWarEnabled()` reports the resolved state and `OnFogEnabledChanged` fires on
+every change; map widgets rebind their material automatically.
+
+With fog off the map draws unfogged and every `IsWorldExplored`/`IsWorldVisible` query answers true,
+so `RequireExplored`/`RequireVisible` icons all show. Toggling off keeps what has been explored, so
+turning fog back on resumes rather than resets — a "reveals the map" item is just
+`SetFogOfWarEnabled(false)`. A level that never enables fog never allocates the fog render targets.
+
+Console: `ModularMinimap.SetFogEnabled 0|1|reset`.
 
 ## Fog persistence
 

@@ -8,7 +8,9 @@
 
 /**
  * Reveals fog of war around its owner. Add to the player pawn (or anything that should grant
- * map vision). Registers with the minimap subsystem's fog manager on BeginPlay.
+ * map vision). Registers with the minimap subsystem on BeginPlay; registration is independent of
+ * whether fog is currently enabled, so a revealer added in a fog-free level still works if fog is
+ * switched on later.
  */
 UCLASS(ClassGroup = (Minimap), meta = (BlueprintSpawnableComponent))
 class MODULARMINIMAP_API UMinimapRevealerComponent : public USceneComponent

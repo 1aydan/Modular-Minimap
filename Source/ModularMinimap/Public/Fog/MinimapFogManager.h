@@ -19,6 +19,9 @@ class UTextureRenderTarget2D;
  *  - VisibleRT: cleared and restamped each fog update with current vision circles.
  * A widget material composites them: unexplored hidden, explored dim, visible bright.
  *
+ * The subsystem owns the revealer registry and gates updates on IsFogOfWarEnabled, so this object is
+ * created on the first enable and then kept: exploration survives fog being toggled off and on.
+ *
  * Persistence: ExportState packs the explored mask (plus its world mapping) into a zlib-compressed
  * blob; ImportState re-applies a blob additively, remapping through the current projection.
  * A CPU-side stamp history allows lossless redraw when map bounds grow, and a coarse grid answers
@@ -39,8 +42,11 @@ public:
 	/** Clears both targets and redraws exploration from the stamp history (bounds growth). */
 	void HandleProjectionChanged();
 
-	void RegisterRevealer(UMinimapRevealerComponent* Revealer);
-	void UnregisterRevealer(UMinimapRevealerComponent* Revealer);
+	/** Skip the remaining update interval so the next Update restamps immediately. */
+	void RequestImmediateUpdate() { bForceNextUpdate = true; }
+
+	/** Drops per-revealer bookkeeping when the subsystem unregisters one. */
+	void ForgetRevealer(const UMinimapRevealerComponent* Revealer);
 
 	UTextureRenderTarget2D* GetExploredRenderTarget() const { return ExploredRT; }
 	UTextureRenderTarget2D* GetVisibleRenderTarget() const { return VisibleRT; }
@@ -83,8 +89,6 @@ private:
 
 	TWeakObjectPtr<UMinimapSubsystem> Owner;
 
-	TArray<TWeakObjectPtr<UMinimapRevealerComponent>> Revealers;
-
 	/** Last explored-stamp position per revealer, for movement gating. */
 	TMap<FObjectKey, FVector2D> LastStampPositions;
 
@@ -96,4 +100,7 @@ private:
 	static constexpr int32 GridSize = 128;
 
 	float UpdateAccumulator = 0.0f;
+
+	/** Set by RequestImmediateUpdate; bypasses the interval once. */
+	bool bForceNextUpdate = false;
 };

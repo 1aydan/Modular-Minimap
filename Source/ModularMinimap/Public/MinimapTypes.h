@@ -32,6 +32,22 @@ enum class EMinimapFogRule : uint8
 	RequireVisible
 };
 
+/**
+ * Tri-state fog-of-war switch. Used both by per-level settings and by the runtime override, so
+ * "inherit" means "defer to the next level down": the runtime override falls back to the level
+ * settings, which fall back to the project-wide bEnableFogOfWar.
+ */
+UENUM(BlueprintType)
+enum class EMinimapFogMode : uint8
+{
+	/** No opinion; resolve from the level settings, then the project setting. */
+	Inherit,
+	/** Force fog of war on. */
+	Enabled,
+	/** Force fog of war off: the whole map reads as explored and visible. */
+	Disabled
+};
+
 /** Mask shape applied to a minimap view. */
 UENUM(BlueprintType)
 enum class EMinimapMaskShape : uint8
@@ -260,3 +276,6 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnMinimapMapTextureChanged);
 
 /** Broadcast when an objective marker is clicked on a map view. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMinimapObjectiveClicked, FMinimapObjectiveHandle, Handle);
+
+/** Broadcast when fog of war is switched on or off for the world. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMinimapFogEnabledChanged, bool, bEnabled);

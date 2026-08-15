@@ -34,7 +34,11 @@ public:
 	UPROPERTY(EditAnywhere, Config, Category = "Capture", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float AutoBoundsMargin = 0.1f;
 
-	/** Master switch for fog of war. When false, no fog targets are created and everything is visible. */
+	/**
+	 * Project-wide default for fog of war. When off, no fog targets are created and everything reads
+	 * as visible. A level settings asset's FogMode, and UMinimapSubsystem::SetFogOfWarEnabled at
+	 * runtime, both override this per world.
+	 */
 	UPROPERTY(EditAnywhere, Config, Category = "Fog")
 	bool bEnableFogOfWar = true;
 

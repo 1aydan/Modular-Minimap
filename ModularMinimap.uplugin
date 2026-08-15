@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
-	"Version": 1,
-	"VersionName": "0.1.0",
+	"Version": 2,
+	"VersionName": "0.2.0",
 	"FriendlyName": "Modular Minimap",
 	"Description": "Navigation-driven modular minimap system: auto-generated map backgrounds from the navmesh, fog of war with persistence hooks, full-screen map overlay, objective markers, actor tracking and a compass bar. Widgets built on CommonUI.",
 	"Category": "UI",

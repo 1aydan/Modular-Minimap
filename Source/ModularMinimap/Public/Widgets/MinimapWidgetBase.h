@@ -113,6 +113,10 @@ protected:
 	UFUNCTION()
 	void HandleMapTextureChanged();
 
+	/** Re-pushes the fog textures and the FogEnabled switch after a runtime fog toggle. */
+	UFUNCTION()
+	void HandleFogEnabledChanged(bool bEnabled);
+
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> MapMID;
 
